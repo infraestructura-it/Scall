@@ -11,6 +11,10 @@ function _ib(nombre, frases, tipo, valor, respuesta, slots) {
 var INTENTS_BOGOTA = [
   // ── Conversación ──
   _ib('BogSaludo', ['que mas', 'que mas pues', 'quihubo', 'quiubo', 'que hubo', 'buenas', 'hola parce', 'como vamos'], 'responder', '', '¡Qué más! Aquí andamos, ¿en qué le colaboro?'),
+  _ib('BogBuenosDias', ['buenos dias', 'buen dia', 'muy buenos dias', 'feliz dia'], 'responder', '', '¡Buenos días! Que le rinda el día. ¿En qué le colaboro?'),
+  _ib('BogBuenasTardes', ['buenas tardes', 'buena tarde', 'muy buenas tardes'], 'responder', '', '¡Buenas tardes! ¿En qué le colaboro?'),
+  _ib('BogBuenasNoches', ['buenas noches', 'buena noche', 'muy buenas noches'], 'responder', '', '¡Buenas noches! Descanse bien. ¿Necesita algo?'),
+  _ib('BogHola', ['hola', 'hola scall', 'hey', 'saludos'], 'responder', '', '¡Hola! A la orden, ¿qué necesita?'),
   _ib('BogEstado', ['como estas', 'como va todo', 'como le va', 'todo bien'], 'responder', '', 'Bien, gracias a Dios. ¿Y usted qué?'),
   _ib('BogGracias', ['muchas gracias', 'mil gracias', 'gracias', 'le agradezco'], 'responder', '', 'Con mucho gusto, para eso estamos.'),
   _ib('BogDespedida', ['nos vemos', 'hasta luego', 'chao', 'chao pues', 'hablamos', 'que le vaya bien', 'cuidese'], 'responder', '', '¡Chao pues! Que le vaya muy bien.'),
