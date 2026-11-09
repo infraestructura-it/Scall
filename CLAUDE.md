@@ -15,5 +15,5 @@ limpio de `automatizacion-it/my-skills` (SCALL), que quedó congelado.
 - Claude: `fetch` directo con `anthropic-dangerous-direct-browser-access`,
   modelo por defecto `claude-opus-5-5`, `effort: low`, tool `crear_intent`
   con `strict: true` y `tool_choice: auto` (los modelos 5.x rechazan forzarla).
-- Las keys solo en localStorage (origen `infraestructura-it.github.io`, no se
+- Las keys solo en localStorage (origen `infraestructura-it.com`, no se
   comparte con la app vieja de `automatizacion-it.github.io`).

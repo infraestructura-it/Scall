@@ -5,7 +5,7 @@ local (localStorage) y se responde con una acción. Si no existe un intent para
 lo que pediste, Scall ofrece crearlo con ayuda de la API de Claude, lo guarda
 y lo ejecuta. La próxima vez ya responde solo, sin llamar a la IA.
 
-**En vivo:** https://infraestructura-it.github.io/Scall/
+**En vivo:** https://infraestructura-it.com/Scall/
 
 ## Uso
 1. Abre la página en Chrome y entra a ⚙ para pegar tu API Key de Claude
