@@ -17,11 +17,12 @@ Asistente de voz en el navegador, basado en **intents + slots**:
 **En vivo:** https://infraestructura-it.com/Scall/
 
 ## Uso
-1. Abre la página en Chrome y entra a ⚙ para pegar tu API Key de Claude.
-2. Toca el orbe 🎤 y di, por ejemplo, "quiero reservar un hotel".
-3. Si no lo conoce, acepta crearlo con Claude, y desde ahí responde las
+1. Abre la página en Chrome y entra a ⚙ para pegar tu API Key de Claude (solo para crear intents).
+2. Entra a 🎙 Voz y graba cada frase 3 veces (Scall reconoce con su propio código, sin keys).
+3. Toca el orbe 🎤 y di una frase grabada, por ejemplo "qué más pues".
+4. Si no lo conoce, acepta crearlo con Claude, y desde ahí responde las
    preguntas.
-4. 📦 Datos muestra lo guardado; 📚 Intents muestra los intents creados.
+5. 📦 Datos muestra lo guardado; 📚 Intents muestra los intents creados.
 
 ## Estructura
 | Archivo | Qué hace |
@@ -30,8 +31,20 @@ Asistente de voz en el navegador, basado en **intents + slots**:
 | `js/slots.js` | Tipos de slot y validadores (`texto`, `numero`, `fecha`, `opcion`). |
 | `js/herramientas.js` | Capa de datos con forma de MCP (`guardar_registro`, `consultar_registros`). Hoy usa localStorage. |
 | `js/claude.js` | Llamadas a Claude: clasificar (Haiku), crear intents (Opus), preguntas libres. |
+| `js/voz_propia.js` | Reconocimiento propio: captura de micrófono → preprocesado → MFCC (FFT propia) → DTW contra patrones grabados. Panel 🎙 Voz. |
+| `js/intents_bogota.js` | Frases comunes de Bogotá como intents (se siembran solos). |
 | `js/ui.js` | Voz, micrófono, chat, paneles y configuración. |
 | `js/tts_elevenlabs.js` | Motor de voz (navegador / ElevenLabs / Gemini TTS). |
+
+## Voz propia (pasos 1-4 sin terceros)
+1. **Audio Input**: `getUserMedia` + detección de inicio/fin de frase.
+2. **Preprocessing**: preénfasis, recorte de silencio, normalización de volumen.
+3. **Feature Extraction**: MFCC con FFT propia.
+4. **Pattern Recognition**: DTW contra tus grabaciones (se rechaza lo dudoso).
+5. **Language Processing**: `procesar()` en `motor.js`.
+
+Es un reconocedor de **frases cerradas** dependiente del hablante: solo entiende
+lo que grabaste. Las frases con `{hueco}` se escriben, no se dicen.
 
 ## Un intent
 ```json

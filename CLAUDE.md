@@ -6,12 +6,16 @@ https://infraestructura-it.com/Scall/). Sucesor limpio de
 
 ## Arquitectura (ver README para la tabla de archivos)
 Orden de carga en `index.html`: ui → tts_elevenlabs → slots → herramientas →
-claude → motor. Todo son scripts clásicos con scope global compartido:
+claude → motor → voz_propia → intents_bogota. Todo son scripts clásicos con scope global compartido:
 **antes de crear una función, verifica que el nombre no exista**:
 `grep -ho "^\(async \)\?function [A-Za-z_]*" js/*.js | sed 's/async //' | sort | uniq -d`
 (vacío = sin duplicados).
 
 ## Reglas
+- **Voz propia, sin terceros**: el reconocimiento (`js/voz_propia.js`) es código
+  nuestro: captura → preprocesado → MFCC → DTW contra patrones grabados por el
+  usuario. NO usar Web Speech API ni STT externo. El navegador solo da micrófono
+  y cálculo. Las funciones `vp*` puras (sin DOM) se prueban en Node.
 - **Un solo flujo** en `procesar()` (motor.js): pendiente → comandos de sistema
   → match local → clasificador Haiku → fallback (1º repetir, 2º crear con Claude).
 - **Intents = datos.** `tipo` solo puede ser una clave de `CATALOGO`. Capacidad

@@ -50,6 +50,7 @@
 <header>
   <h1>Scall</h1>
   <div>
+    <button onclick="abrirPanel('panelVoz')">🎙 Voz</button>
     <button onclick="abrirPanel('panelIntents')">📚 Intents</button>
     <button onclick="abrirPanel('panelDatos')">📦 Datos</button>
     <button onclick="abrirPanel('panelConfig')">⚙</button>
@@ -67,6 +68,18 @@
     <button class="btn" type="submit">Enviar</button>
   </form>
 </main>
+
+<!-- Panel: entrenamiento de voz propia -->
+<div id="panelVoz" class="panel" hidden onclick="if(event.target===this)cerrarPaneles()">
+  <div class="caja">
+    <h2>🎙 Voz propia</h2>
+    <p class="hint">Scall reconoce tu voz con su propio código (MFCC + DTW), sin keys ni servicios. Graba cada frase 3 veces con el volumen y la distancia con que vas a hablar. Las frases con {hueco} (ej. "cuánto cuesta {producto}") se escriben, no se graban.</p>
+    <div id="estadoVoz" class="hint">Pulsa ● Grabar y di la frase.</div>
+    <div id="resumenVoz" class="hint"></div>
+    <div class="fila"><button class="btn" onclick="vpProbar()">Probar reconocimiento</button><button class="btn" onclick="cerrarPaneles()">Cerrar</button></div>
+    <div id="listaVoz"></div>
+  </div>
+</div>
 
 <!-- Panel: base local de intents -->
 <div id="panelIntents" class="panel" hidden onclick="if(event.target===this)cerrarPaneles()">
@@ -139,6 +152,8 @@
 <script src="js/herramientas.js"></script>
 <script src="js/claude.js"></script>
 <script src="js/motor.js"></script>
-<script>iniciarUI();</script>
+<script src="js/voz_propia.js"></script>
+<script src="js/intents_bogota.js"></script>
+<script>sembrarIntentsBogota(); iniciarUI();</script>
 </body>
 </html>

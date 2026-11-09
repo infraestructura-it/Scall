@@ -22,19 +22,9 @@ function preguntarSiNo(msg) {
 }
 
 // ── Micrófono ─────────────────────────────────────────────────────────
-var rec = null, escuchando = false;
-function toggleMic() {
-  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { agregar('sis', 'Este navegador no reconoce voz. Usa Chrome o escribe abajo.'); return; }
-  if (escuchando) { rec.stop(); return; }
-  if (typeof detenerVoz === 'function') detenerVoz();   // que no se escuche a sí mismo
-  rec = new SR(); rec.lang = 'es-CO'; rec.interimResults = false;
-  rec.onstart  = function(){ escuchando = true;  estado('Escuchando…', 'escuchando'); };
-  rec.onend    = function(){ escuchando = false; estado('Toca el orbe y habla'); };
-  rec.onerror  = function(e){ if (e.error !== 'no-speech') agregar('sis', 'Micrófono: ' + e.error); };
-  rec.onresult = function(e){ procesar(e.results[0][0].transcript); };
-  rec.start();
-}
+// Reconocimiento propio (js/voz_propia.js): sin Web Speech API ni servicios externos.
+var escuchando = false;
+function toggleMic() { vpEscucharYProcesar(); }
 
 // ── Chat ──────────────────────────────────────────────────────────────
 function agregar(clase, t) {
@@ -57,6 +47,7 @@ function abrirPanel(id) {
   if (id === 'panelConfig') cargarConfig();
   if (id === 'panelDatos') renderDatos();
   if (id === 'panelIntents') renderIntents();
+  if (id === 'panelVoz') vpRenderPanel();
   document.getElementById(id).hidden = false;
 }
 function cerrarPaneles() { document.querySelectorAll('.panel').forEach(function(p){ p.hidden = true; }); }
