@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SCALL · Asistente</title>
+<title>Scall</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
   :root{--bg:#0a0e1a;--panel:#121829;--borde:#1f2a44;--txt:#e6ecff;--sub:#8a96b8;--glow:#00e5ff;--glow2:#a855f7;--ok:#22c55e;--err:#ef4444}
@@ -48,9 +48,10 @@
 </head>
 <body>
 <header>
-  <h1>SCALL · Asistente</h1>
+  <h1>Scall</h1>
   <div>
-    <button onclick="abrirPanel('panelIntents')">📚 Mis intents</button>
+    <button onclick="abrirPanel('panelIntents')">📚 Intents</button>
+    <button onclick="abrirPanel('panelDatos')">📦 Datos</button>
     <button onclick="abrirPanel('panelConfig')">⚙</button>
   </div>
 </header>
@@ -62,7 +63,7 @@
   <div id="chat"></div>
   <div id="opciones"></div>
   <form id="entrada">
-    <input id="texto" placeholder="…o escribe aquí (ej. escuchar música)" autocomplete="off">
+    <input id="texto" placeholder="…o escribe aquí (ej. quiero reservar un hotel)" autocomplete="off">
     <button class="btn" type="submit">Enviar</button>
   </form>
 </main>
@@ -71,7 +72,7 @@
 <div id="panelIntents" class="panel" hidden onclick="if(event.target===this)cerrarPaneles()">
   <div class="caja">
     <h2>📚 Intents guardados (localStorage)</h2>
-    <p class="hint">Cada intent: frases que lo activan → una acción del catálogo. <code>{x}</code> en una frase captura lo que digas en esa posición.</p>
+    <p class="hint">Cada intent: frases que lo activan → slots (datos que pide si faltan) → una acción del catálogo. <code>{nombre_slot}</code> en una frase captura lo que digas en esa posición.</p>
     <div id="listaIntents"></div>
     <div class="fila">
       <button class="btn" onclick="exportarIntents()">Exportar JSON</button>
@@ -85,7 +86,17 @@
   </div>
 </div>
 
-<!-- Panel: configuración (comparte localStorage con la app principal) -->
+<!-- Panel: datos guardados por las acciones (MCP local = localStorage) -->
+<div id="panelDatos" class="panel" hidden onclick="if(event.target===this)cerrarPaneles()">
+  <div class="caja">
+    <h2>📦 Datos guardados</h2>
+    <p class="hint">Lo que guardan los intents con la acción guardar_registro. Hoy vive en localStorage; cuando haya un servidor MCP, se cambia solo js/herramientas.js.</p>
+    <div id="listaDatos"></div>
+    <div class="fila"><button class="btn" onclick="cerrarPaneles()">Cerrar</button></div>
+  </div>
+</div>
+
+<!-- Panel: configuración -->
 <div id="panelConfig" class="panel" hidden onclick="if(event.target===this)cerrarPaneles()">
   <div class="caja">
     <h2>⚙ Configuración</h2>
@@ -122,403 +133,12 @@
   </div>
 </div>
 
-<script>
-// tts_elevenlabs.js necesita getApiKey() para la ruta de Gemini TTS (igual que en docs/ui/)
-function getApiKey() {
-  var k = localStorage.getItem('geminiApiKey');
-  return (k && k.trim()) ? k.trim() : '';
-}
-</script>
+<script src="js/ui.js"></script>
 <script src="js/tts_elevenlabs.js"></script>
-<script>
-// =====================================================================
-// SCALL · Asistente — voz → base local de intents → acción → respuesta.
-// Si no hay intent, ofrece crearlo con Claude, lo guarda y lo ejecuta.
-// Los intents NO contienen código: solo apuntan a una acción del CATÁLOGO.
-// =====================================================================
-var DB_KEY = 'scall_asistente_intents';
-
-// ── Catálogo fijo de acciones (lo único que un intent puede hacer) ────
-var CATALOGO = {
-  musica:          { desc: 'Reproduce música/video de YouTube. valor = búsqueda (ej. "salsa clásica").', run: function(v){ reproducirMusicaAsist(v); } },
-  detener_musica:  { desc: 'Detiene la música. valor = "".', run: function(){ detenerMusicaAsist(); } },
-  responder:       { desc: 'Solo responde con un texto fijo. valor = "" (se dice la respuesta).', run: function(){} },
-  abrir_url:       { desc: 'Abre una página web en pestaña nueva. valor = URL completa https://...', run: function(v){ abrirPestana(v); } },
-  buscar_web:      { desc: 'Busca en Google en pestaña nueva. valor = texto a buscar.', run: function(v){ abrirPestana('https://www.google.com/search?q=' + encodeURIComponent(v)); } },
-  hora:            { desc: 'Dice la hora actual. valor = "".', run: function(){ decir('Son las ' + new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit'})); } },
-  fecha:           { desc: 'Dice la fecha de hoy. valor = "".', run: function(){ decir('Hoy es ' + new Date().toLocaleDateString('es-CO',{weekday:'long',day:'numeric',month:'long'})); } },
-  temporizador:    { desc: 'Avisa después de N minutos. valor = número de minutos (ej. "5").', run: function(v){ temporizador(v); } },
-  preguntar_claude:{ desc: 'Pregunta algo a Claude y lee la respuesta. valor = la pregunta (puede usar {x}).', run: function(v){ preguntarClaude(v); } }
-};
-
-// ── Base local ────────────────────────────────────────────────────────
-function leerDB() {
-  try { var a = JSON.parse(localStorage.getItem(DB_KEY) || '[]'); return Array.isArray(a) ? a : []; }
-  catch(e) { return []; }
-}
-function guardarDB(arr) { localStorage.setItem(DB_KEY, JSON.stringify(arr)); }
-
-// Normaliza: minúsculas, SIN tildes, sin puntuación (evita el bug de "muéstrame" vs "muestra")
-function normalizar(t) {
-  return (t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[¿?¡!.,;:"]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-// Busca el intent: la frase más larga/específica que coincida gana (no "el primero").
-// Las frases coinciden por palabras completas, así "desactiva" no dispara "activa".
-function buscarIntent(texto) {
-  var t = ' ' + normalizar(texto) + ' ';
-  var mejor = null;
-  leerDB().forEach(function(intent) {
-    (intent.frases || []).forEach(function(frase) {
-      var f = normalizar(frase);
-      if (!f) return;
-      // se marca {x} antes de normalizar para que sobreviva aunque venga como {X} o con tildes alrededor
-      f = normalizar(frase.replace(/\{x\}/gi, ' XSLOTX ')).replace(/xslotx/g, '{x}');
-      var patron = f.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&').replace('\\{x\\}', '(.+)');
-      var m = t.match(new RegExp(' ' + patron + ' '));
-      if (m) {
-        var puntaje = f.replace('{x}', '').length;
-        if (!mejor || puntaje > mejor.puntaje) mejor = { intent: intent, x: (m[1] || '').trim(), puntaje: puntaje };
-      }
-    });
-  });
-  return mejor;
-}
-
-function ejecutarIntent(intent, x) {
-  var sustituir = function(s){ return (s || '').replace(/\{x\}/g, x || ''); };
-  var accion = CATALOGO[intent.tipo];
-  if (!accion) { decir('Ese intent apunta a una acción que no conozco: ' + intent.tipo); return; }
-  if (intent.respuesta) decir(sustituir(intent.respuesta));
-  try { accion.run(sustituir(intent.valor)); }
-  catch(e) { decir('Algo falló ejecutando ' + intent.nombre); console.error(e); }
-}
-
-// ── Diálogo (estado entre turnos) ─────────────────────────────────────
-var pendiente = null;   // {tipo:'crear', texto} | {tipo:'guardar', intent, texto}
-
-function esSi(t){ return /^(si|claro|dale|ok|okay|de una|hazlo|correcto|listo|por favor|si por favor|vale)\b/.test(normalizar(t)); }
-function esNo(t){ return /^(no|cancela|cancelar|olvidalo|dejalo|nada)\b/.test(normalizar(t)); }
-
-function procesar(texto) {
-  texto = (texto || '').trim();
-  if (!texto) return;
-  agregar('yo', texto);
-  limpiarOpciones();
-  var n = normalizar(texto);
-
-  // 1) ¿Es la respuesta a una pregunta pendiente? (se limpia ANTES, nunca se queda atascado)
-  if (pendiente) {
-    var p = pendiente; pendiente = null;
-    if (esSi(texto)) {
-      if (p.tipo === 'crear')   return crearConClaude(p.texto);
-      if (p.tipo === 'guardar') return guardarYEjecutar(p.intent, p.texto);
-    }
-    if (esNo(texto)) { decir('Listo, no hago nada.'); return; }
-    // No fue sí/no: se trata como un comando nuevo
-  }
-
-  // 2) Comandos mínimos del sistema
-  if (/^(para|detente|stop|silencio|callate)\b/.test(n)) { detenerVoz && detenerVoz(); detenerMusicaAsist(); decir('Listo.'); return; }
-  if (/(que sabes hacer|que puedes hacer|lista de intents|mis comandos)/.test(n)) { listarPorVoz(); return; }
-
-  // 3) Base local
-  var hit = buscarIntent(texto);
-  if (hit) { agregar('sis', '✔ intent local: ' + hit.intent.nombre + (hit.x ? ' · {x} = "' + hit.x + '"' : '')); ejecutarIntent(hit.intent, hit.x); return; }
-
-  // 4) No existe → ofrecer crearlo con Claude
-  pendiente = { tipo: 'crear', texto: texto };
-  preguntar('No tengo un intent para "' + texto + '". ¿Quieres que lo cree con ayuda de Claude?');
-}
-
-function preguntar(msg) {
-  decir(msg);
-  mostrarOpciones([{ t: 'Sí', f: function(){ procesar('sí'); } }, { t: 'No', no: true, f: function(){ procesar('no'); } }]);
-}
-
-function guardarYEjecutar(intent, texto) {
-  var db = leerDB();
-  intent.id = 'i_' + Date.now();
-  intent.creado = new Date().toISOString();
-  db.push(intent);
-  guardarDB(db);
-  renderIntents();
-  agregar('sis', '💾 Guardado en la base local: ' + intent.nombre);
-  var hit = buscarIntent(texto);
-  ejecutarIntent(intent, hit && hit.intent.id === intent.id ? hit.x : '');
-}
-
-// ── Claude: genera el intent como JSON (sin código, solo catálogo) ────
-function getClaudeKey() { return (localStorage.getItem('claudeApiKey') || '').trim(); }
-function getModelo()    { return (localStorage.getItem('scall_asistente_modelo') || 'claude-opus-5-5').trim(); }
-
-async function llamarClaude(body) {
-  var key = getClaudeKey();
-  if (!key) throw new Error('SIN_KEY');
-  body.model = getModelo();
-  var headers = {
-    'Content-Type': 'application/json',
-    'x-api-key': key,
-    'anthropic-version': '2023-06-01',
-    'anthropic-dangerous-direct-browser-access': 'true'
-  };
-  // Fallback del servidor si el modelo rechaza la petición (solo modelos 5.x)
-  if (/^claude-(opus-5|sonnet-5-5|fable-5)/.test(body.model)) {
-    headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
-    body.fallbacks = 'default';
-  }
-  var r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: headers, body: JSON.stringify(body) });
-  var data = await r.json().catch(function(){ return {}; });
-  if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + ((data.error && data.error.message) || 'error'));
-  if (data.stop_reason === 'refusal') throw new Error('Claude rechazó la petición');
-  return data;
-}
-
-var HERRAMIENTA = {
-  name: 'crear_intent',
-  description: 'Registra un intent de voz nuevo para el asistente SCALL.',
-  strict: true,
-  input_schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['nombre', 'frases', 'tipo', 'valor', 'respuesta'],
-    properties: {
-      nombre:    { type: 'string', description: 'Nombre corto, ej. "Escuchar música"' },
-      frases:    { type: 'array', items: { type: 'string' }, description: '4 a 8 frases en español que lo activan, sin tildes, en minúsculas. Usa {x} para la parte variable.' },
-      tipo:      { type: 'string', enum: Object.keys(CATALOGO) },
-      valor:     { type: 'string', description: 'Parámetro de la acción. Puede contener {x}.' },
-      respuesta: { type: 'string', description: 'Frase corta y natural que SCALL dice al ejecutar. Puede contener {x}.' }
-    }
-  }
-};
-
-async function crearConClaude(texto) {
-  estado('Creando intent con Claude…', 'pensando');
-  var catalogo = Object.keys(CATALOGO).map(function(k){ return '- ' + k + ': ' + CATALOGO[k].desc; }).join('\n');
-  var existentes = leerDB().map(function(i){ return i.nombre; }).join(', ') || '(ninguno)';
-  try {
-    var data = await llamarClaude({
-      max_tokens: 4000,
-      output_config: { effort: 'low' },
-      tools: [HERRAMIENTA],
-      tool_choice: { type: 'auto' },
-      system:
-        'Diseñas intents para SCALL, un asistente de voz en español colombiano. ' +
-        'Un intent conecta frases habladas con UNA acción de este catálogo cerrado:\n' + catalogo + '\n\n' +
-        'Reglas: llama siempre a la herramienta crear_intent, una sola vez. ' +
-        'Las frases deben cubrir maneras comunes de pedir lo mismo (no solo la literal). ' +
-        'Si el pedido tiene una parte variable (un artista, un tema, un número), crea frases con {x} en esa posición y usa {x} en valor/respuesta; ' +
-        'incluye además frases sin {x} con un valor razonable por defecto. ' +
-        'Si nada del catálogo encaja, usa preguntar_claude con valor = la pregunta. ' +
-        'Intents que ya existen (no los dupliques): ' + existentes,
-      messages: [{ role: 'user', content: 'El usuario dijo: "' + texto + '". Crea el intent.' }]
-    });
-    var bloque = (data.content || []).find(function(b){ return b.type === 'tool_use' && b.name === 'crear_intent'; });
-    var intent = bloque ? bloque.input : null;
-    if (!intent) {   // respaldo: JSON en el texto
-      var txt = (data.content || []).filter(function(b){ return b.type === 'text'; }).map(function(b){ return b.text; }).join('');
-      var m = txt.match(/\{[\s\S]*\}/); if (m) intent = JSON.parse(m[0]);
-    }
-    if (!intent || !CATALOGO[intent.tipo] || !Array.isArray(intent.frases) || !intent.frases.length) throw new Error('Claude no devolvió un intent válido');
-    estado('Toca el orbe y habla');
-    agregar('sis', '🧩 Propuesta:\n' + JSON.stringify(intent, null, 2));
-    pendiente = { tipo: 'guardar', intent: intent, texto: texto };
-    preguntar('Listo, lo llamé "' + intent.nombre + '". Se activa con frases como "' + intent.frases.slice(0, 2).join('" o "') + '". ¿Lo guardo y lo ejecuto?');
-  } catch(e) {
-    estado('Toca el orbe y habla');
-    if (e.message === 'SIN_KEY') { decir('Necesito la API Key de Claude. Ábrela en el engranaje.'); abrirPanel('panelConfig'); }
-    else decir('No pude crear el intent. ' + e.message);
-  }
-}
-
-async function preguntarClaude(pregunta) {
-  estado('Consultando a Claude…', 'pensando');
-  try {
-    var data = await llamarClaude({
-      max_tokens: 2000,
-      output_config: { effort: 'low' },
-      system: 'Eres SCALL, asistente de voz en español colombiano. Responde en 1 a 3 frases, sin listas ni formato: se va a leer en voz alta.',
-      messages: [{ role: 'user', content: pregunta }]
-    });
-    var txt = (data.content || []).filter(function(b){ return b.type === 'text'; }).map(function(b){ return b.text; }).join(' ').trim();
-    decir(txt || 'No obtuve respuesta.');
-  } catch(e) {
-    decir(e.message === 'SIN_KEY' ? 'Necesito la API Key de Claude.' : 'No pude consultar: ' + e.message);
-  } finally { estado('Toca el orbe y habla'); }
-}
-
-// ── Acciones ──────────────────────────────────────────────────────────
-var ytPlayerAsist = null, ytCola = [], ytIdx = 0;
-
-function abrirPestana(url) {
-  var w = window.open(url, '_blank');
-  if (!w) agregar('sis', '🔗 El navegador bloqueó la pestaña. Ábrela aquí: ' + url);
-}
-
-function cargarYT() {
-  return new Promise(function(res) {
-    if (window.YT && YT.Player) return res();
-    var s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
-    var t = setInterval(function(){ if (window.YT && YT.Player) { clearInterval(t); res(); } }, 200);
-  });
-}
-
-async function reproducirMusicaAsist(busqueda) {
-  busqueda = busqueda || 'musica';
-  var key = (localStorage.getItem('youtubeApiKey') || '').trim();
-  if (!key) { abrirPestana('https://www.youtube.com/results?search_query=' + encodeURIComponent(busqueda)); return; }
-  try {
-    var r = await fetch('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&maxResults=8&q=' + encodeURIComponent(busqueda) + '&key=' + key);
-    var d = await r.json();
-    if (d.error) throw new Error(d.error.message);
-    ytCola = (d.items || []).map(function(i){ return i.id.videoId; }).filter(Boolean);
-    if (!ytCola.length) { decir('No encontré nada para ' + busqueda); return; }
-    ytIdx = 0;
-    await cargarYT();
-    document.getElementById('player').hidden = false;
-    if (ytPlayerAsist) { ytPlayerAsist.loadVideoById(ytCola[0]); return; }
-    ytPlayerAsist = new YT.Player('ytDiv', {
-      width: '100%', height: '100%', videoId: ytCola[0],
-      playerVars: { autoplay: 1, playsinline: 1 },
-      events: {
-        onReady: function(e){ e.target.playVideo(); },
-        onStateChange: function(e){ if (e.data === 0 && ytIdx < ytCola.length - 1) ytPlayerAsist.loadVideoById(ytCola[++ytIdx]); },
-        onError: function(){ if (ytIdx < ytCola.length - 1) ytPlayerAsist.loadVideoById(ytCola[++ytIdx]); }  // 101/150: embed bloqueado → siguiente
-      }
-    });
-  } catch(e) {
-    agregar('sis', 'YouTube: ' + e.message);
-    abrirPestana('https://www.youtube.com/results?search_query=' + encodeURIComponent(busqueda));
-  }
-}
-
-function detenerMusicaAsist() {
-  if (ytPlayerAsist && ytPlayerAsist.stopVideo) ytPlayerAsist.stopVideo();
-  document.getElementById('player').hidden = true;
-}
-
-function temporizador(v) {
-  var min = parseFloat(String(v).replace(',', '.'));
-  if (!(min > 0)) { decir('No entendí cuántos minutos.'); return; }
-  setTimeout(function(){ decir('¡Tiempo! Pasaron ' + min + ' minutos.'); }, min * 60000);
-}
-
-function listarPorVoz() {
-  var db = leerDB();
-  if (!db.length) { decir('Todavía no tengo intents. Pídeme algo y te ofrezco crearlo.'); return; }
-  decir('Sé hacer ' + db.length + ' cosas: ' + db.map(function(i){ return i.nombre; }).join(', ') + '.');
-}
-
-// ── Voz (sale por el mismo motor de SCALL: ElevenLabs / Gemini / Web Speech) ──
-function decir(t) {
-  agregar('scall', t);
-  if (typeof encolarVoz === 'function') encolarVoz(t);
-  else if (window.speechSynthesis) { var u = new SpeechSynthesisUtterance(t); u.lang = 'es-CO'; speechSynthesis.speak(u); }
-}
-
-var rec = null, escuchando = false;
-function toggleMic() {
-  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { agregar('sis', 'Este navegador no reconoce voz. Usa Chrome o escribe abajo.'); return; }
-  if (escuchando) { rec.stop(); return; }
-  if (typeof detenerVoz === 'function') detenerVoz();   // que no se escuche a sí mismo
-  rec = new SR(); rec.lang = 'es-CO'; rec.interimResults = false;
-  rec.onstart  = function(){ escuchando = true;  estado('Escuchando…', 'escuchando'); };
-  rec.onend    = function(){ escuchando = false; estado('Toca el orbe y habla'); };
-  rec.onerror  = function(e){ if (e.error !== 'no-speech') agregar('sis', 'Micrófono: ' + e.error); };
-  rec.onresult = function(e){ procesar(e.results[0][0].transcript); };
-  rec.start();
-}
-
-// ── UI ────────────────────────────────────────────────────────────────
-function agregar(clase, t) {
-  var c = document.getElementById('chat'), d = document.createElement('div');
-  d.className = 'msg ' + clase; d.textContent = t; c.appendChild(d); c.scrollTop = c.scrollHeight;
-}
-function estado(t, modo) {
-  document.getElementById('estado').textContent = t;
-  document.getElementById('orbe').className = modo || '';
-}
-function mostrarOpciones(ops) {
-  var o = document.getElementById('opciones'); o.innerHTML = '';
-  ops.forEach(function(op){ var b = document.createElement('button'); b.textContent = op.t; if (op.no) b.className = 'no'; b.onclick = op.f; o.appendChild(b); });
-}
-function limpiarOpciones() { document.getElementById('opciones').innerHTML = ''; }
-
-function abrirPanel(id) { cerrarPaneles(); if (id === 'panelConfig') cargarConfig(); document.getElementById(id).hidden = false; }
-function cerrarPaneles() { document.querySelectorAll('.panel').forEach(function(p){ p.hidden = true; }); }
-
-function renderIntents() {
-  var cont = document.getElementById('listaIntents'), db = leerDB();
-  if (!db.length) { cont.innerHTML = '<p class="hint">Vacío. Di algo como "escuchar música" y acepta crearlo.</p>'; return; }
-  cont.innerHTML = '';
-  db.forEach(function(i) {
-    var d = document.createElement('div'); d.className = 'intent';
-    var del = document.createElement('button'); del.className = 'btn del'; del.textContent = 'Borrar';
-    del.onclick = function(){ guardarDB(leerDB().filter(function(x){ return x.id !== i.id; })); renderIntents(); };
-    d.appendChild(del);
-    var b = document.createElement('b'); b.textContent = i.nombre; d.appendChild(b);
-    var c = document.createElement('code');
-    c.textContent = ' ' + i.tipo + ' → "' + i.valor + '" · frases: ' + (i.frases || []).join(' | ');
-    d.appendChild(c); cont.appendChild(d);
-  });
-}
-function exportarIntents() {
-  var z = document.getElementById('zonaImportar'); z.hidden = false;
-  document.getElementById('jsonImportar').value = JSON.stringify(leerDB(), null, 2);
-  agregar('sis', 'JSON listo en el panel para copiar.');
-}
-function mostrarImportar() { document.getElementById('zonaImportar').hidden = false; document.getElementById('jsonImportar').value = ''; }
-function importarIntents() {
-  try {
-    var arr = JSON.parse(document.getElementById('jsonImportar').value);
-    if (!Array.isArray(arr)) arr = [arr];
-    var ok = arr.filter(function(i){ return i && CATALOGO[i.tipo] && Array.isArray(i.frases); });
-    var db = leerDB().concat(ok.map(function(i, n){ i.id = i.id || ('i_' + Date.now() + '_' + n); return i; }));
-    guardarDB(db); renderIntents();
-    agregar('sis', 'Importados ' + ok.length + ' de ' + arr.length + ' intents.');
-  } catch(e) { agregar('sis', 'JSON inválido: ' + e.message); }
-}
-
-function cargarConfig() {
-  document.getElementById('estClaude').textContent = getClaudeKey() ? '✅ configurada' : '❌ falta';
-  document.getElementById('estYT').textContent = localStorage.getItem('youtubeApiKey') ? '✅ configurada' : '— no configurada';
-  document.getElementById('cfgModelo').value = getModelo();
-  document.getElementById('cfgClaude').value = ''; document.getElementById('cfgYT').value = '';
-  document.getElementById('cfgProveedor').value = localStorage.getItem('scall_tts_proveedor') || 'navegador';
-  document.getElementById('estEL').textContent = localStorage.getItem('scall_elevenlabs_key') ? '✅ configurada' : '❌ falta';
-  document.getElementById('estGem').textContent = getApiKey() ? '✅ configurada' : '❌ falta';
-  document.getElementById('cfgEL').value = ''; document.getElementById('cfgGem').value = '';
-  document.getElementById('cfgELVoz').value = localStorage.getItem('scall_el_voice') || '';
-  document.getElementById('cfgGemVoz').value = localStorage.getItem('scall_gemini_voice') || '';
-  mostrarCamposVoz();
-}
-function mostrarCamposVoz() {
-  var p = document.getElementById('cfgProveedor').value;
-  document.getElementById('camposEL').hidden = p !== 'elevenlabs';
-  document.getElementById('camposGemini').hidden = p !== 'gemini';
-}
-function guardarConfig() {
-  var c = document.getElementById('cfgClaude').value.trim(), y = document.getElementById('cfgYT').value.trim(), m = document.getElementById('cfgModelo').value.trim();
-  if (c) localStorage.setItem('claudeApiKey', c);
-  if (y) localStorage.setItem('youtubeApiKey', y);
-  localStorage.setItem('scall_asistente_modelo', m || 'claude-opus-5-5');
-  localStorage.setItem('scall_tts_proveedor', document.getElementById('cfgProveedor').value);
-  var el = document.getElementById('cfgEL').value.trim(), elv = document.getElementById('cfgELVoz').value.trim();
-  var gk = document.getElementById('cfgGem').value.trim(), gv = document.getElementById('cfgGemVoz').value.trim();
-  if (el) localStorage.setItem('scall_elevenlabs_key', el);
-  if (elv) localStorage.setItem('scall_el_voice', elv);
-  if (gk) localStorage.setItem('geminiApiKey', gk);
-  if (gv) localStorage.setItem('scall_gemini_voice', gv);
-  cargarConfig(); agregar('sis', 'Configuración guardada.');
-}
-
-document.getElementById('entrada').addEventListener('submit', function(e) {
-  e.preventDefault(); var i = document.getElementById('texto'); procesar(i.value); i.value = '';
-});
-renderIntents();
-agregar('scall', 'Hola. Dime qué quieres hacer. Si no sé hacerlo, te ofrezco crearlo con Claude.');
-</script>
+<script src="js/slots.js"></script>
+<script src="js/herramientas.js"></script>
+<script src="js/claude.js"></script>
+<script src="js/motor.js"></script>
+<script>iniciarUI();</script>
 </body>
 </html>
